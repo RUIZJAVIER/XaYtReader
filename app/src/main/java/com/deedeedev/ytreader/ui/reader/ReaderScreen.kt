@@ -406,6 +406,13 @@ internal fun ReaderScreen(
         ).show()
     }
 
+    fun dismissHighlightNoteDialog() {
+        showHighlightNoteDialog = false
+        highlightNoteDraft = ""
+        highlightNoteTarget = null
+        highlightNoteSelectionRange = null
+    }
+
     fun openAiChat(selectedFragment: String? = null) {
         aiChatSelectedFragment = selectedFragment
             ?.trim()
@@ -605,13 +612,6 @@ internal fun ReaderScreen(
 
         clearSearchResultsMode()
         clearJumpBackState()
-    }
-
-    fun dismissHighlightNoteDialog() {
-        showHighlightNoteDialog = false
-        highlightNoteDraft = ""
-        highlightNoteTarget = null
-        highlightNoteSelectionRange = null
     }
 
     fun dismissBookmarkDialog() {
