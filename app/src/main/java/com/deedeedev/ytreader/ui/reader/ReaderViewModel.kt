@@ -534,7 +534,7 @@ class ReaderViewModel(
         try {
             subtitleRepository.markAiCleaningQueued(
                 subtitleId = subtitleId,
-                inputText = request.subtitleText,
+                sourceText = request.subtitleText,
                 updatedAt = System.currentTimeMillis()
             )
             val cleanedText = aiCleaningRepository.cleanText(request)
@@ -557,7 +557,7 @@ class ReaderViewModel(
             withContext(NonCancellable) {
                 subtitleRepository.markAiCleaningQueued(
                     subtitleId = subtitleId,
-                    inputText = request.subtitleText,
+                    sourceText = request.subtitleText,
                     updatedAt = System.currentTimeMillis()
                 )
                 AiCleaningWorkScheduler.enqueue(appContext, subtitleId)
