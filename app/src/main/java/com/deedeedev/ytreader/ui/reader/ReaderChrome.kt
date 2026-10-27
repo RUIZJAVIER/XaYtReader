@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.TimerOff
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.BottomAppBarDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,6 +51,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -66,6 +70,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.deedeedev.ytreader.R
 import com.deedeedev.ytreader.ui.FontOption
 import androidx.compose.foundation.layout.padding
@@ -84,11 +90,21 @@ internal fun ReaderTopBar(
     title: String,
     topBarTag: String,
     showCancelAction: Boolean,
+    isAiCleaning: Boolean,
+    showAiCleaningAction: Boolean,
+    showAiChatAction: Boolean,
     onBack: () -> Unit,
-    onCancelEditing: () -> Unit
+    onCancelEditing: () -> Unit,
+    onCopyAll: () -> Unit,
+    onOpenAiChat: () -> Unit,
+    onStartAiCleaning: () -> Unit
 ) {
     val backLabel = stringResource(R.string.back)
     val cancelLabel = stringResource(R.string.cancel)
+    val copyAllLabel = stringResource(R.string.reader_copy_all)
+    val aiChatLabel = stringResource(R.string.reader_ai_chat_open)
+    val aiCleaningLabel = stringResource(R.string.ai_cleaning_menu_label)
+    val aiCleaningRunningLabel = stringResource(R.string.ai_cleaning_running_menu_label)
     AnimatedVisibility(
         visible = visible,
         enter = slideInVertically(initialOffsetY = { -it }),
@@ -114,6 +130,42 @@ internal fun ReaderTopBar(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onCopyAll) {
+                        Icon(
+                            Icons.Filled.ContentCopy,
+                            contentDescription = copyAllLabel
+                        )
+                    }
+                    if (showAiChatAction) {
+                        IconButton(onClick = onOpenAiChat) {
+                            Icon(
+                                Icons.Filled.Chat,
+                                contentDescription = aiChatLabel
+                            )
+                        }
+                    }
+                    if (showAiCleaningAction) {
+                        if (isAiCleaning) {
+                            Box(
+                                modifier = Modifier.size(48.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .semantics { contentDescription = aiCleaningRunningLabel },
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        } else {
+                            IconButton(onClick = onStartAiCleaning) {
+                                Icon(
+                                    Icons.Filled.AutoAwesome,
+                                    contentDescription = aiCleaningLabel
+                                )
+                            }
+                        }
+                    }
                     if (showCancelAction) {
                         TextButton(onClick = onCancelEditing) {
                             Text(cancelLabel)
@@ -121,6 +173,79 @@ internal fun ReaderTopBar(
                     }
                 }
             )
+        }
+    }
+}
+
+@Composable
+internal fun ReaderQuickActions(
+    modifier: Modifier = Modifier,
+    visible: Boolean,
+    isAiCleaning: Boolean,
+    showAiCleaningAction: Boolean,
+    showAiChatAction: Boolean,
+    onCopyAll: () -> Unit,
+    onOpenAiChat: () -> Unit,
+    onStartAiCleaning: () -> Unit
+) {
+    val copyAllLabel = stringResource(R.string.reader_copy_all)
+    val aiChatLabel = stringResource(R.string.reader_ai_chat_open)
+    val aiCleaningLabel = stringResource(R.string.ai_cleaning_menu_label)
+    val aiCleaningRunningLabel = stringResource(R.string.ai_cleaning_running_menu_label)
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(initialOffsetY = { it / 2 }),
+        exit = slideOutVertically(targetOffsetY = { it / 2 }),
+        modifier = modifier
+    ) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            tonalElevation = 2.dp,
+            shadowElevation = 3.dp,
+            modifier = Modifier.testTag(READER_QUICK_ACTIONS_TAG)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 2.dp)
+            ) {
+                IconButton(onClick = onCopyAll) {
+                    Icon(
+                        Icons.Filled.ContentCopy,
+                        contentDescription = copyAllLabel
+                    )
+                }
+                if (showAiChatAction) {
+                    IconButton(onClick = onOpenAiChat) {
+                        Icon(
+                            Icons.Filled.Chat,
+                            contentDescription = aiChatLabel
+                        )
+                    }
+                }
+                if (showAiCleaningAction) {
+                    if (isAiCleaning) {
+                        Box(
+                            modifier = Modifier.size(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .semantics { contentDescription = aiCleaningRunningLabel },
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = onStartAiCleaning) {
+                            Icon(
+                                Icons.Filled.AutoAwesome,
+                                contentDescription = aiCleaningLabel
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

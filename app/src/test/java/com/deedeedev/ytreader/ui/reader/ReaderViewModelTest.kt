@@ -3,6 +3,7 @@ package com.deedeedev.ytreader.ui.reader
 import android.content.Context
 import android.content.SharedPreferences
 import com.deedeedev.ytreader.StringProvider
+import com.deedeedev.ytreader.data.AiChatRepository
 import com.deedeedev.ytreader.data.NoteRepository
 import com.deedeedev.ytreader.data.SubtitleRepository
 import com.deedeedev.ytreader.data.UserPreferencesRepository
@@ -288,6 +289,7 @@ class ReaderViewModelTest {
             subtitleRepository = subtitleRepository,
             noteRepository = noteRepository,
             userPreferencesRepository = createUserPreferencesRepository(),
+            aiChatRepository = mock(),
             subtitleId = SUBTITLE_ID,
             widgetUpdater = { _ -> }
         )

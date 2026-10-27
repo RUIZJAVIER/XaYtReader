@@ -23,13 +23,15 @@ internal object AiCleaningFailureFactory {
         resources: Resources,
         throwable: Throwable,
         endpoint: String? = null,
-        model: String? = null
+        model: String? = null,
+        fallbackSummary: String? = null,
+        timeoutSummary: String? = null
     ): AiCleaningFailure {
         return when (throwable) {
             is AiCleaningException -> throwable.failure
             is SocketTimeoutException -> buildFailure(
                 resources = resources,
-                summary = resources.getString(R.string.ai_cleaning_timed_out),
+                summary = timeoutSummary ?: resources.getString(R.string.ai_cleaning_timed_out),
                 lines = buildList {
                     add(resources.getString(R.string.ai_cleaning_log_error_type, throwable::class.java.name))
                     endpoint?.takeIf { it.isNotBlank() }
@@ -44,6 +46,7 @@ internal object AiCleaningFailureFactory {
             else -> buildFailure(
                 resources = resources,
                 summary = throwable.message?.takeIf { it.isNotBlank() }
+                    ?: fallbackSummary
                     ?: resources.getString(R.string.ai_cleaning_failed),
                 lines = buildList {
                     add(resources.getString(R.string.ai_cleaning_log_error_type, throwable::class.java.name))

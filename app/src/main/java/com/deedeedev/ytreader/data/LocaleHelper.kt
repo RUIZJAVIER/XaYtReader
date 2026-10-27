@@ -24,6 +24,7 @@ object LocaleHelper {
             AppLanguage.SYSTEM -> Locale.getDefault()
             AppLanguage.ENGLISH -> Locale.ENGLISH
             AppLanguage.ITALIAN -> Locale.ITALIAN
+            AppLanguage.SPANISH -> Locale.forLanguageTag("es")
         }
 
         Locale.setDefault(locale)

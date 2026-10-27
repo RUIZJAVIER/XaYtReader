@@ -6,6 +6,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.deedeedev.ytreader.R
 import com.deedeedev.ytreader.StringProvider
+import com.deedeedev.ytreader.data.AiChatMessage
+import com.deedeedev.ytreader.data.AiChatRepository
+import com.deedeedev.ytreader.data.AiChatRequest
 import com.deedeedev.ytreader.data.AiCleaningWorkScheduler
 import com.deedeedev.ytreader.widget.ReaderWidgetProvider
 import com.deedeedev.ytreader.data.NoteRepository
@@ -16,7 +19,9 @@ import com.deedeedev.ytreader.data.local.BookmarkEntity
 import com.deedeedev.ytreader.data.local.HighlightNoteEntity
 import com.deedeedev.ytreader.data.local.SubtitleEntity
 import com.deedeedev.ytreader.domain.SubtitleParser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +30,24 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+enum class ReaderAiChatRole {
+    USER,
+    ASSISTANT
+}
+
+data class ReaderAiChatMessage(
+    val id: Long,
+    val role: ReaderAiChatRole,
+    val content: String
+)
+
+data class ReaderAiChatUiState(
+    val messages: List<ReaderAiChatMessage> = emptyList(),
+    val isSending: Boolean = false,
+    val errorSummary: String? = null,
+    val errorDetails: String? = null
+)
 
 data class ReaderUiState(
     val subtitleWithStates: SubtitleWithStates? = null,
@@ -56,12 +79,19 @@ class ReaderViewModel(
     private val subtitleRepository: SubtitleRepository,
     private val noteRepository: NoteRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
+    private val aiChatRepository: AiChatRepository,
     private val subtitleId: Long,
     private val widgetUpdater: (Context) -> Unit = { context -> ReaderWidgetProvider.notifyWidgetChanged(context) }
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReaderUiState(isLoading = true))
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
+
+    private val _aiChatState = MutableStateFlow(ReaderAiChatUiState())
+    val aiChatState: StateFlow<ReaderAiChatUiState> = _aiChatState.asStateFlow()
+
+    private var nextAiChatMessageId = 0L
+    private var aiChatJob: Job? = null
 
     init {
         markSubtitleOpened()
@@ -483,6 +513,115 @@ class ReaderViewModel(
         }
     }
 
+    fun sendAiChatMessage(query: String, selectedFragment: String? = null) {
+        val userText = query.trim()
+        if (userText.isEmpty()) return
+
+        val snapshot = _aiChatState.value
+        if (snapshot.isSending) return
+
+        val userMessage = ReaderAiChatMessage(
+            id = nextAiChatMessageId(),
+            role = ReaderAiChatRole.USER,
+            content = userText
+        )
+        val history = snapshot.messages + userMessage
+
+        fun failWithoutRequest(summary: String) {
+            _aiChatState.value = snapshot.copy(
+                messages = history,
+                isSending = false,
+                errorSummary = summary,
+                errorDetails = null
+            )
+        }
+
+        val subtitleText = _uiState.value.content.trim()
+        if (subtitleText.isEmpty()) {
+            failWithoutRequest(stringProvider.getString(R.string.reader_ai_chat_no_transcript))
+            return
+        }
+
+        val endpoint = userPreferencesRepository.getAiEndpoint().trim()
+        val apiKey = userPreferencesRepository.getAiApiKey().trim()
+        val model = userPreferencesRepository.getAiModel().trim()
+        if (endpoint.isEmpty() || apiKey.isEmpty() || model.isEmpty()) {
+            failWithoutRequest(stringProvider.getString(R.string.reader_ai_chat_missing_settings))
+            return
+        }
+
+        _aiChatState.value = snapshot.copy(
+            messages = history,
+            isSending = true,
+            errorSummary = null,
+            errorDetails = null
+        )
+
+        val request = AiChatRequest(
+            endpointBaseUrl = endpoint,
+            apiKey = apiKey,
+            model = model,
+            messages = buildList {
+                add(
+                    AiChatMessage(
+                        role = "system",
+                        content = buildAiChatSystemPrompt(
+                            subtitleText = subtitleText,
+                            selectedFragment = selectedFragment
+                        )
+                    )
+                )
+                history.forEach { message ->
+                    add(
+                        AiChatMessage(
+                            role = if (message.role == ReaderAiChatRole.USER) "user" else "assistant",
+                            content = message.content
+                        )
+                    )
+                }
+            }
+        )
+
+        aiChatJob = viewModelScope.launch {
+            try {
+                val answer = aiChatRepository.chat(request)
+                _aiChatState.update { state ->
+                    state.copy(
+                        messages = state.messages + ReaderAiChatMessage(
+                            id = nextAiChatMessageId(),
+                            role = ReaderAiChatRole.ASSISTANT,
+                            content = answer
+                        ),
+                        isSending = false
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                val failure = aiChatRepository.toFailure(request, error)
+                _aiChatState.update { state ->
+                    state.copy(
+                        isSending = false,
+                        errorSummary = failure.summary,
+                        errorDetails = failure.detailedLog
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearAiChat() {
+        aiChatJob?.cancel()
+        aiChatJob = null
+        _aiChatState.value = ReaderAiChatUiState()
+    }
+
+    fun clearAiChatError() {
+        _aiChatState.update { it.copy(errorSummary = null, errorDetails = null) }
+    }
+
+    private fun nextAiChatMessageId(): Long = ++nextAiChatMessageId
+
     private fun persistHighlights(highlights: List<TextHighlight>) {
         val serialized = serializeHighlights(highlights)
         _uiState.update {
@@ -543,6 +682,7 @@ class ReaderViewModel(
             subtitleRepository: SubtitleRepository,
             noteRepository: NoteRepository,
             userPreferencesRepository: UserPreferencesRepository,
+            aiChatRepository: AiChatRepository,
             subtitleId: Long
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -553,6 +693,7 @@ class ReaderViewModel(
                     subtitleRepository,
                     noteRepository,
                     userPreferencesRepository,
+                    aiChatRepository,
                     subtitleId
                 ) as T
             }

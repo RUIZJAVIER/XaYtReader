@@ -86,6 +86,10 @@ internal fun ReaderScreenMainLayer(
     isNotificationPermissionGranted: Boolean,
     currentText: String,
     onCopyText: (AnnotatedString) -> Unit,
+    onCopyAllText: () -> Unit,
+    onCopySelection: () -> Unit,
+    onAskAiSelection: () -> Unit,
+    onOpenAiChat: () -> Unit,
     onShareText: (String) -> Unit,
     onReplaceWithClipboard: () -> Unit,
     onShowLocalCleaning: () -> Unit,
@@ -270,8 +274,40 @@ internal fun ReaderScreenMainLayer(
             title = subtitleTitle,
             topBarTag = READER_TOP_BAR_TAG,
             showCancelAction = readerMode == ReaderMode.STUDY && isEditing,
+            isAiCleaning = isAiCleaning,
+            showAiCleaningAction = readerMode == ReaderMode.STUDY && !isEditing,
+            showAiChatAction = !isEditing && studyContent.isNotBlank(),
             onBack = { onRequestAction(PendingAction.ExitScreen) },
-            onCancelEditing = { onRequestAction(PendingAction.ExitEditing) }
+            onCancelEditing = { onRequestAction(PendingAction.ExitEditing) },
+            onCopyAll = onCopyAllText,
+            onOpenAiChat = onOpenAiChat,
+            onStartAiCleaning = {
+                if (isNotificationPermissionGranted) {
+                    onStartAiCleaning(currentText)
+                } else {
+                    onRequestNotificationPermission(currentText)
+                }
+            }
+        )
+
+        ReaderQuickActions(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 8.dp, bottom = 48.dp)
+                .navigationBarsPadding(),
+            visible = !isUiVisible && !isEditing && !showSelectionToolbar && !showSearchResultsToolbar,
+            isAiCleaning = isAiCleaning,
+            showAiCleaningAction = readerMode == ReaderMode.STUDY,
+            showAiChatAction = studyContent.isNotBlank(),
+            onCopyAll = onCopyAllText,
+            onOpenAiChat = onOpenAiChat,
+            onStartAiCleaning = {
+                if (isNotificationPermissionGranted) {
+                    onStartAiCleaning(currentText)
+                } else {
+                    onRequestNotificationPermission(currentText)
+                }
+            }
         )
 
         ReaderScrollSlider(
@@ -363,6 +399,8 @@ internal fun ReaderScreenMainLayer(
             showSelectionToolbar = showSelectionToolbar,
             onSelectionColorSelected = onSelectionColorSelected,
             onSelectionNoteClick = onSelectionNoteClick,
+            onCopySelection = onCopySelection,
+            onAskAiSelection = onAskAiSelection,
             selectionHasNote = selectionHasNote,
             onDeleteHighlight = onDeleteHighlight,
             hasActiveHighlight = hasActiveHighlight(),

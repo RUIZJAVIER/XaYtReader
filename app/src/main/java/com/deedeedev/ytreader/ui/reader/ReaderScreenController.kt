@@ -35,6 +35,23 @@ internal fun currentReaderText(
     }
 }
 
+internal fun readerTextToCopy(
+    isEditing: Boolean,
+    editText: String,
+    studyContent: String
+): String = if (isEditing) editText else studyContent
+
+internal fun readerSelectionTextToCopy(
+    content: String,
+    selection: SelectionRange?
+): String? {
+    if (selection == null) return null
+    val start = selection.start.coerceIn(0, content.length)
+    val end = selection.end.coerceIn(start, content.length)
+    if (start >= end) return null
+    return content.substring(start, end)
+}
+
 internal fun applyReaderTextUpdate(
     updated: String,
     isEditing: Boolean,

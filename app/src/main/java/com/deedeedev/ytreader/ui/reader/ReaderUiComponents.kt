@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
@@ -59,6 +61,8 @@ internal fun HighlightSelectionToolbar(
     modifier: Modifier = Modifier,
     onColorSelected: (HighlightColor) -> Unit,
     onNoteClick: () -> Unit,
+    onCopySelection: () -> Unit,
+    onAskAiSelection: () -> Unit,
     hasNote: Boolean,
     showDelete: Boolean,
     onDeleteHighlight: () -> Unit,
@@ -68,6 +72,8 @@ internal fun HighlightSelectionToolbar(
 ) {
     val expanded = rememberSaveable { mutableStateOf(false) }
     var currentColor by remember { mutableStateOf(selectedColor) }
+    val copySelectionLabel = stringResource(R.string.reader_copy_selection)
+    val askAiSelectionLabel = stringResource(R.string.reader_ai_chat_ask_selection)
     val editNoteLabel = stringResource(R.string.reader_edit_note)
     val deleteHighlightLabel = stringResource(R.string.reader_remove_highlight)
     val searchInOriginalLabel = stringResource(R.string.reader_search_in_original)
@@ -82,6 +88,36 @@ internal fun HighlightSelectionToolbar(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            FilledTonalButton(
+                onClick = onCopySelection,
+                modifier = Modifier.size(44.dp).align(Alignment.Bottom),
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ContentCopy,
+                    contentDescription = copySelectionLabel
+                )
+            }
+            FilledTonalButton(
+                onClick = onAskAiSelection,
+                modifier = Modifier.size(44.dp).align(Alignment.Bottom),
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Chat,
+                    contentDescription = askAiSelectionLabel
+                )
+            }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {

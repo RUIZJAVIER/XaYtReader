@@ -6,7 +6,8 @@ import com.deedeedev.ytreader.R
 enum class AppLanguage(val languageCode: String, val storageValue: String, @param:StringRes val labelRes: Int) {
     SYSTEM("", "system", R.string.language_system),
     ENGLISH("en", "en", R.string.language_english),
-    ITALIAN("it", "it", R.string.language_italian);
+    ITALIAN("it", "it", R.string.language_italian),
+    SPANISH("es", "es", R.string.language_spanish);
 
     companion object {
         fun fromStorageValue(value: String?): AppLanguage {

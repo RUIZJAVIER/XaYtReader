@@ -8,6 +8,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -119,10 +120,12 @@ internal fun ReaderScreen(
             subtitleRepository,
             noteRepository,
             userPreferencesRepository,
+            appContainer.aiChatRepository,
             subtitleId
         )
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val aiChatState by viewModel.aiChatState.collectAsStateWithLifecycle()
     val subtitle = uiState.subtitle
     val appTheme by userPreferencesRepository.appTheme.collectAsStateWithLifecycle()
     val progressIndicatorMode by userPreferencesRepository.progressIndicatorMode.collectAsStateWithLifecycle()
@@ -195,6 +198,8 @@ internal fun ReaderScreen(
     var searchInOriginalQuery by remember { mutableStateOf("") }
     var showAiPreviewDialog by remember { mutableStateOf(false) }
     var showAiErrorDialog by remember { mutableStateOf(false) }
+    var showAiChatSheet by remember { mutableStateOf(false) }
+    var aiChatSelectedFragment by remember { mutableStateOf<String?>(null) }
     var showLocalCleaningDialog by remember { mutableStateOf(false) }
     var pendingAiCleaningSourceText by remember { mutableStateOf<String?>(null) }
     var selectionRange by remember { mutableStateOf<SelectionRange?>(null) }
@@ -365,6 +370,85 @@ internal fun ReaderScreen(
         studyContent = uiState.content,
         originalModeText = originalModeText
     )
+
+    fun copyFullSubtitle() {
+        val fullText = readerTextToCopy(
+            isEditing = isEditing,
+            editText = editText,
+            studyContent = uiState.content
+        )
+        if (fullText.isBlank()) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(context.getString(R.string.reader_nothing_to_copy))
+            }
+            return
+        }
+        clipboardManager.setText(AnnotatedString(fullText))
+        Toast.makeText(
+            context,
+            context.getString(R.string.reader_copy_all_done),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    fun copySelectedFragment() {
+        val range = selectionRange
+            ?: activeHighlight?.let { SelectionRange(start = it.start, end = it.end) }
+        val selectedText = readerSelectionTextToCopy(
+            content = uiState.content,
+            selection = range
+        ) ?: return
+        clipboardManager.setText(AnnotatedString(selectedText))
+        Toast.makeText(
+            context,
+            context.getString(R.string.reader_copy_selection_done),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    fun openAiChat(selectedFragment: String? = null) {
+        aiChatSelectedFragment = selectedFragment
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        showAiChatSheet = true
+    }
+
+    fun askAiAboutSelection() {
+        val range = selectionRange
+            ?: activeHighlight?.let { SelectionRange(start = it.start, end = it.end) }
+        val selectedText = readerSelectionTextToCopy(
+            content = uiState.content,
+            selection = range
+        )
+        if (selectedText.isNullOrBlank()) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.reader_ai_chat_no_selection)
+                )
+            }
+            return
+        }
+
+        selectionRange = null
+        activeHighlight = null
+        suppressSelectionToolbar = true
+        dismissHighlightNoteDialog()
+        studyTextView?.clearSelection()
+        webViewStudyRef?.let { webView ->
+            with(WebViewReaderJs) { webView.clearSelection() }
+        }
+        openAiChat(selectedText)
+    }
+
+    fun copyAiChatResponse(text: String) {
+        if (text.isBlank()) return
+        clipboardManager.setText(AnnotatedString(text))
+        Toast.makeText(
+            context,
+            context.getString(R.string.reader_ai_chat_copied),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
 
     fun applyTextUpdate(updated: String) {
         applyReaderTextUpdate(
@@ -1134,6 +1218,10 @@ internal fun ReaderScreen(
     )
 
     BackHandler {
+        if (showAiChatSheet) {
+            showAiChatSheet = false
+            return@BackHandler
+        }
         if (searchResultsMode != null && jumpBackState?.reason == ReaderJumpReason.SEARCH) {
             coroutineScope.launch { jumpBackTo(jumpBackState ?: return@launch) }
         } else if (searchResultsMode != null) {
@@ -1349,6 +1437,10 @@ internal fun ReaderScreen(
         isNotificationPermissionGranted = hasNotificationPermission(context),
         currentText = currentText(),
         onCopyText = { clipboardManager.setText(it) },
+        onCopyAllText = { copyFullSubtitle() },
+        onCopySelection = { copySelectedFragment() },
+        onAskAiSelection = { askAiAboutSelection() },
+        onOpenAiChat = { openAiChat() },
         onShareText = { textToShare ->
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -1825,6 +1917,27 @@ internal fun ReaderScreen(
         onDismissLocalCleaning = { showLocalCleaningDialog = false },
         snackbarHostState = snackbarHostState,
         coroutineScope = coroutineScope
+    )
+
+    ReaderAiChatSheet(
+        visible = showAiChatSheet,
+        subtitleTitle = subtitle.title,
+        messages = aiChatState.messages,
+        isSending = aiChatState.isSending,
+        errorSummary = aiChatState.errorSummary,
+        errorDetails = aiChatState.errorDetails,
+        selectedFragment = aiChatSelectedFragment,
+        onDismiss = { showAiChatSheet = false },
+        onDismissError = { viewModel.clearAiChatError() },
+        onClearChat = { viewModel.clearAiChat() },
+        onClearSelection = { aiChatSelectedFragment = null },
+        onSend = { query ->
+            viewModel.sendAiChatMessage(
+                query = query,
+                selectedFragment = aiChatSelectedFragment
+            )
+        },
+        onCopyMessage = { copyAiChatResponse(it) }
     )
 
     if (showSearchInOriginalDialog) {

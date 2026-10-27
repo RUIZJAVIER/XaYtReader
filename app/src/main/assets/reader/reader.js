@@ -6,6 +6,7 @@ let searchRange = null;
 let offsetMap = [];
 let selectionChangeTimeout = null;
 let scrollThrottleTimeout = null;
+let lastLongPressAt = 0;
 
 // Edit mode state
 let findSearchText = "";
@@ -378,6 +379,7 @@ document.addEventListener("selectionchange", function() {
       Bridge.onSelectionChanged(-1, -1);
       return;
     }
+    lastLongPressAt = Date.now();
     try {
       var range = sel.getRangeAt(0);
       buildOffsetMap();
@@ -400,6 +402,9 @@ document.addEventListener("selectionchange", function() {
 
 // Click handler
 document.addEventListener("click", function(e) {
+  // A long press opens the native selection menu; do not treat its release as a page tap.
+  if (Date.now() - lastLongPressAt < 600) return;
+
   var target = e.target;
 
   // Check timestamp click

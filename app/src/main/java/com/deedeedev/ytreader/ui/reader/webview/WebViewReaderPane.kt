@@ -48,6 +48,7 @@ internal fun WebViewReaderPane(
                 }
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
+                isLongClickable = true
                 overScrollMode = WebView.OVER_SCROLL_NEVER
                 setBackgroundColor(initialBackgroundColor)
                 webViewClient = object : WebViewClient() {

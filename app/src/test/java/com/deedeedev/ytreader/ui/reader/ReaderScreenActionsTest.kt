@@ -2,6 +2,7 @@ package com.deedeedev.ytreader.ui.reader
 
 import com.deedeedev.ytreader.domain.SubtitleSegment
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -241,5 +242,54 @@ class ReaderScreenActionsTest {
             PendingFindSelection.OriginalSegment(segmentIndex = 3, start = 2, end = 8),
             selection
         )
+    }
+
+    @Test
+    fun `readerTextToCopy uses edit text while editing and study content otherwise`() {
+        assertEquals(
+            "edited text",
+            readerTextToCopy(isEditing = true, editText = "edited text", studyContent = "saved text")
+        )
+        assertEquals(
+            "saved text",
+            readerTextToCopy(isEditing = false, editText = "edited text", studyContent = "saved text")
+        )
+    }
+
+    @Test
+    fun `buildAiChatSystemPrompt includes the full transcript and selected fragment`() {
+        val prompt = buildAiChatSystemPrompt(
+            subtitleText = "  Full transcript body  ",
+            selectedFragment = "  Chosen fragment  "
+        )
+
+        assertTrue(prompt.contains("<<<TRANSCRIPT>>>\nFull transcript body\n<<<END_TRANSCRIPT>>>"))
+        assertTrue(prompt.contains("<<<SELECTED_FRAGMENT>>>\nChosen fragment\n<<<END_SELECTED_FRAGMENT>>>"))
+        assertTrue(prompt.contains("same language"))
+    }
+
+    @Test
+    fun `buildAiChatSystemPrompt omits selected fragment section when blank`() {
+        val prompt = buildAiChatSystemPrompt(
+            subtitleText = "Transcript",
+            selectedFragment = "   "
+        )
+
+        assertTrue(prompt.contains("Transcript"))
+        assertEquals(false, prompt.contains("<<<SELECTED_FRAGMENT>>>"))
+    }
+
+    @Test
+    fun `readerSelectionTextToCopy clamps and extracts the selected range`() {
+        assertEquals(
+            "ell",
+            readerSelectionTextToCopy("hello", SelectionRange(start = 1, end = 4))
+        )
+        assertEquals(
+            "hello",
+            readerSelectionTextToCopy("hello", SelectionRange(start = -5, end = 99))
+        )
+        assertNull(readerSelectionTextToCopy("hello", SelectionRange(start = 4, end = 1)))
+        assertNull(readerSelectionTextToCopy("hello", null))
     }
 }
