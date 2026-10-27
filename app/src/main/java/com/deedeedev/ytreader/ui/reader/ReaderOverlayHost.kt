@@ -6,10 +6,23 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +35,7 @@ import com.deedeedev.ytreader.R
 internal fun BoxScope.ReaderOverlayHost(
     isUiVisible: Boolean,
     isEditing: Boolean,
+    isAiCleaning: Boolean,
     showSelectionToolbar: Boolean,
     onSelectionColorSelected: (HighlightColor) -> Unit,
     onSelectionNoteClick: () -> Unit,
@@ -103,6 +117,15 @@ internal fun BoxScope.ReaderOverlayHost(
         )
     }
 
+    if (isAiCleaning) {
+        AiCleaningInProgressBanner(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 8.dp)
+        )
+    }
+
     if (!isUiVisible && !isEditing) {
         AnimatedVisibility(
             visible = showProgressIndicator,
@@ -143,4 +166,39 @@ internal fun BoxScope.ReaderOverlayHost(
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 16.dp)
     )
+}
+
+@Composable
+private fun AiCleaningInProgressBanner(modifier: Modifier = Modifier) {
+    val bannerLabel = stringResource(R.string.ai_cleaning_in_progress_banner)
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 4.dp,
+        shadowElevation = 4.dp,
+        modifier = modifier.testTag(READER_AI_CLEANING_BANNER_TAG)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = bannerLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp
+            )
+        }
+    }
 }

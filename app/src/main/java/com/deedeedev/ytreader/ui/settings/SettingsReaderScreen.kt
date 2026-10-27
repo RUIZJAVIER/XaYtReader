@@ -28,7 +28,8 @@ fun SettingsReaderScreen(
             appContainer.appContext,
             appContainer.userPreferencesRepository,
             appContainer.youtubeRepository,
-            appContainer.videoRepository
+            appContainer.videoRepository,
+            appContainer.aiChatRepository
         )
     )
 ) {

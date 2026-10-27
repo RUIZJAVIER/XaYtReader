@@ -83,7 +83,6 @@ internal fun ReaderScreenMainLayer(
     onDecreaseFontSize: () -> Unit,
     onIncreaseFontSize: () -> Unit,
     onChangeFontFamily: (String) -> Unit,
-    isNotificationPermissionGranted: Boolean,
     currentText: String,
     onCopyText: (AnnotatedString) -> Unit,
     onCopyAllText: () -> Unit,
@@ -98,7 +97,6 @@ internal fun ReaderScreenMainLayer(
     onShowFindAndReplace: () -> Unit,
     onStartExternalAiCleaning: (String) -> Unit,
     onStartAiCleaning: (String) -> Unit,
-    onRequestNotificationPermission: (String) -> Unit,
     hasTimestampedSegments: Boolean,
     onShowJumpToTime: () -> Unit,
     isAiCleaning: Boolean,
@@ -281,13 +279,7 @@ internal fun ReaderScreenMainLayer(
             onCancelEditing = { onRequestAction(PendingAction.ExitEditing) },
             onCopyAll = onCopyAllText,
             onOpenAiChat = onOpenAiChat,
-            onStartAiCleaning = {
-                if (isNotificationPermissionGranted) {
-                    onStartAiCleaning(currentText)
-                } else {
-                    onRequestNotificationPermission(currentText)
-                }
-            }
+            onStartAiCleaning = { onStartAiCleaning(currentText) }
         )
 
         ReaderQuickActions(
@@ -301,13 +293,7 @@ internal fun ReaderScreenMainLayer(
             showAiChatAction = studyContent.isNotBlank(),
             onCopyAll = onCopyAllText,
             onOpenAiChat = onOpenAiChat,
-            onStartAiCleaning = {
-                if (isNotificationPermissionGranted) {
-                    onStartAiCleaning(currentText)
-                } else {
-                    onRequestNotificationPermission(currentText)
-                }
-            }
+            onStartAiCleaning = { onStartAiCleaning(currentText) }
         )
 
         ReaderScrollSlider(
@@ -331,7 +317,6 @@ internal fun ReaderScreenMainLayer(
             fontSize = fontSize,
             selectedFontFamily = fontFamilyName,
             isAiCleaning = isAiCleaning,
-            isNotificationPermissionGranted = isNotificationPermissionGranted,
             currentText = currentText,
             onCopyText = onCopyText,
             onToggleTimestamps = onToggleTimestamps,
@@ -347,7 +332,6 @@ internal fun ReaderScreenMainLayer(
             onShowFindAndReplace = onShowFindAndReplace,
             onStartExternalAiCleaning = onStartExternalAiCleaning,
             onStartAiCleaning = onStartAiCleaning,
-            onRequestNotificationPermission = onRequestNotificationPermission,
             hasTimestampedSegments = hasTimestampedSegments,
             onShowJumpToTime = onShowJumpToTime,
             useWebView = useWebView,
@@ -396,6 +380,7 @@ internal fun ReaderScreenMainLayer(
         ReaderOverlayHost(
             isUiVisible = isUiVisible,
             isEditing = isEditing,
+            isAiCleaning = isAiCleaning,
             showSelectionToolbar = showSelectionToolbar,
             onSelectionColorSelected = onSelectionColorSelected,
             onSelectionNoteClick = onSelectionNoteClick,

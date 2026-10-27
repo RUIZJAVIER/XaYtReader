@@ -131,6 +131,155 @@ class AiChatRepository(
         }
     }
 
+    internal fun buildModelsEndpoint(baseOrFullUrl: String): String {
+        val normalized = baseOrFullUrl.trim().trimEnd('/')
+        return if (normalized.endsWith(MODELS_PATH)) {
+            normalized
+        } else {
+            normalized + MODELS_PATH
+        }
+    }
+
+    internal fun parseModelIds(responseBody: String): List<String> {
+        return try {
+            val response = gson.fromJson(responseBody, ModelsResponse::class.java) ?: return emptyList()
+            response.data
+                .mapNotNull { it.id }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .sorted()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun listModels(
+        endpointBaseUrl: String,
+        apiKey: String
+    ): List<String> = withContext(Dispatchers.IO) {
+        val endpoint = buildModelsEndpoint(endpointBaseUrl)
+        val httpRequest = Request.Builder()
+            .url(endpoint)
+            .addHeader("Authorization", "Bearer $apiKey")
+            .get()
+            .build()
+
+        val requestClient = client.newBuilder()
+            .connectTimeout(MODELS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(MODELS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(MODELS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build()
+
+        executeCancellable(requestClient, httpRequest).use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw AiCleaningException(
+                    AiCleaningFailureFactory.buildFailure(
+                        resources = context.resources,
+                        summary = context.getString(R.string.ai_cleaning_request_failed, response.code),
+                        lines = listOf(
+                            context.getString(R.string.ai_cleaning_log_endpoint, endpoint),
+                            context.getString(R.string.ai_cleaning_log_http_status, response.code),
+                            context.getString(R.string.ai_cleaning_log_response_body),
+                            AiCleaningFailureFactory.sanitizeLog(
+                                body.ifBlank { context.getString(R.string.ai_cleaning_log_empty) },
+                                context.resources
+                            )
+                        )
+                    )
+                )
+            }
+
+            val models = parseModelIds(body)
+            if (models.isEmpty()) {
+                throw AiCleaningException(
+                    AiCleaningFailureFactory.buildFailure(
+                        resources = context.resources,
+                        summary = context.getString(R.string.ai_cleaning_missing_response_text),
+                        lines = listOf(
+                            context.getString(R.string.ai_cleaning_log_endpoint, endpoint),
+                            context.getString(R.string.ai_cleaning_log_response_body),
+                            AiCleaningFailureFactory.sanitizeLog(
+                                body.ifBlank { context.getString(R.string.ai_cleaning_log_empty) },
+                                context.resources
+                            )
+                        )
+                    )
+                )
+            }
+            models
+        }
+    }
+
+    suspend fun pingModel(
+        endpointBaseUrl: String,
+        apiKey: String,
+        model: String
+    ): Long = withContext(Dispatchers.IO) {
+        val endpoint = buildEndpoint(endpointBaseUrl)
+        val payload = ChatCompletionsRequest(
+            model = model,
+            messages = listOf(AiChatMessage(role = "user", content = PING_MESSAGE)),
+            temperature = 0.0,
+            maxTokens = PING_MAX_TOKENS
+        )
+
+        val httpRequest = Request.Builder()
+            .url(endpoint)
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(gson.toJson(payload).toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        val requestClient = client.newBuilder()
+            .connectTimeout(PING_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(PING_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(PING_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build()
+
+        val startedAt = System.currentTimeMillis()
+        executeCancellable(requestClient, httpRequest).use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw AiCleaningException(
+                    AiCleaningFailureFactory.buildFailure(
+                        resources = context.resources,
+                        summary = context.getString(R.string.ai_chat_request_failed, response.code),
+                        lines = listOf(
+                            context.getString(R.string.ai_cleaning_log_endpoint, endpoint),
+                            context.getString(R.string.ai_cleaning_log_model, model),
+                            context.getString(R.string.ai_cleaning_log_http_status, response.code),
+                            context.getString(R.string.ai_cleaning_log_response_body),
+                            AiCleaningFailureFactory.sanitizeLog(
+                                body.ifBlank { context.getString(R.string.ai_cleaning_log_empty) },
+                                context.resources
+                            )
+                        )
+                    )
+                )
+            }
+            val answer = parseResponseText(body)?.trim().orEmpty()
+            if (answer.isEmpty()) {
+                throw AiCleaningException(
+                    AiCleaningFailureFactory.buildFailure(
+                        resources = context.resources,
+                        summary = context.getString(R.string.ai_chat_missing_response_text),
+                        lines = listOf(
+                            context.getString(R.string.ai_cleaning_log_endpoint, endpoint),
+                            context.getString(R.string.ai_cleaning_log_model, model),
+                            context.getString(R.string.ai_cleaning_log_response_body),
+                            AiCleaningFailureFactory.sanitizeLog(
+                                body.ifBlank { context.getString(R.string.ai_cleaning_log_empty) },
+                                context.resources
+                            )
+                        )
+                    )
+                )
+            }
+            System.currentTimeMillis() - startedAt
+        }
+    }
+
     internal fun parseResponseText(responseBody: String): String? {
         return try {
             val response = gson.fromJson(responseBody, ChatCompletionsResponse::class.java)
@@ -169,7 +318,17 @@ class AiChatRepository(
     private data class ChatCompletionsRequest(
         val model: String,
         val messages: List<AiChatMessage>,
-        val temperature: Double
+        val temperature: Double,
+        @com.google.gson.annotations.SerializedName("max_tokens")
+        val maxTokens: Int? = null
+    )
+
+    private data class ModelsResponse(
+        val data: List<ModelsResponseItem> = emptyList()
+    )
+
+    private data class ModelsResponseItem(
+        val id: String? = null
     )
 
     private data class ChatCompletionsResponse(
@@ -187,5 +346,10 @@ class AiChatRepository(
     companion object {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         private const val CHAT_COMPLETIONS_PATH = "/chat/completions"
+        private const val MODELS_PATH = "/models"
+        private const val MODELS_TIMEOUT_SECONDS = 30L
+        private const val PING_TIMEOUT_SECONDS = 30L
+        private const val PING_MAX_TOKENS = 16
+        private const val PING_MESSAGE = "Reply with OK."
     }
 }

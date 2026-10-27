@@ -106,14 +106,19 @@ class AiCleaningWorker(
             subtitleText = sourceText
         )
 
-        setForeground(
-            createForegroundInfo(
-                subtitleId = subtitleId,
-                workId = id,
-                title = subtitle.title,
-                message = applicationContext.getString(R.string.ai_cleaning_notification_in_progress)
+        try {
+            setForeground(
+                createForegroundInfo(
+                    subtitleId = subtitleId,
+                    workId = id,
+                    title = subtitle.title,
+                    message = applicationContext.getString(R.string.ai_cleaning_notification_in_progress)
+                )
             )
-        )
+        } catch (_: Throwable) {
+            // Foreground services may be restricted when the app is in the
+            // background; the cleaning can still proceed as normal work.
+        }
 
         return@withContext try {
             val cleanedText = repository.cleanText(request)

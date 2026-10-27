@@ -38,6 +38,12 @@ data class VideoCollection(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+data class AiApiKeyProfile(
+    val id: String,
+    val name: String,
+    val apiKey: String
+)
+
 data class PreferencesBackup(
     val favoriteLanguages: Set<String> = emptySet(),
     val defaultFontSize: Float = 16f,
@@ -108,6 +114,12 @@ class UserPreferencesRepository(context: Context) {
 
     private val _aiApiKey = MutableStateFlow("")
     val aiApiKey: StateFlow<String> = _aiApiKey.asStateFlow()
+
+    private val _aiApiKeyProfiles = MutableStateFlow<List<AiApiKeyProfile>>(emptyList())
+    val aiApiKeyProfiles: StateFlow<List<AiApiKeyProfile>> = _aiApiKeyProfiles.asStateFlow()
+
+    private val _activeAiApiKeyProfileId = MutableStateFlow<String?>(null)
+    val activeAiApiKeyProfileId: StateFlow<String?> = _activeAiApiKeyProfileId.asStateFlow()
 
     private val _aiModel = MutableStateFlow(DEFAULT_AI_MODEL)
     val aiModel: StateFlow<String> = _aiModel.asStateFlow()
@@ -202,7 +214,88 @@ class UserPreferencesRepository(context: Context) {
         _aiModel.value = prefs.getString(KEY_AI_MODEL, DEFAULT_AI_MODEL) ?: DEFAULT_AI_MODEL
         _aiPrompt.value = prefs.getString(KEY_AI_PROMPT, DEFAULT_AI_CLEANING_PROMPT)
             ?: DEFAULT_AI_CLEANING_PROMPT
+        loadAiApiKeyProfiles()
     }
+
+    private fun loadAiApiKeyProfiles() {
+        _aiApiKeyProfiles.value = readAiApiKeyProfiles()
+        _activeAiApiKeyProfileId.value = encryptedPrefs.getString(KEY_ACTIVE_AI_API_KEY_PROFILE, null)
+            ?.takeIf { activeId -> _aiApiKeyProfiles.value.any { it.id == activeId } }
+        _aiApiKey.value = getAiApiKey()
+    }
+
+    private fun readAiApiKeyProfiles(): List<AiApiKeyProfile> {
+        val raw = encryptedPrefs.getString(KEY_AI_API_KEY_PROFILES, null) ?: return emptyList()
+        return try {
+            val type = object : TypeToken<List<AiApiKeyProfile>>() {}.type
+            gson.fromJson<List<AiApiKeyProfile>>(raw, type) ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun persistAiApiKeyProfiles(profiles: List<AiApiKeyProfile>) {
+        _aiApiKeyProfiles.value = profiles
+        encryptedPrefs.edit()
+            .putString(KEY_AI_API_KEY_PROFILES, gson.toJson(profiles))
+            .apply()
+        _aiApiKey.value = getAiApiKey()
+    }
+
+    private fun persistActiveAiApiKeyProfileId(profileId: String?) {
+        _activeAiApiKeyProfileId.value = profileId
+        encryptedPrefs.edit().putString(KEY_ACTIVE_AI_API_KEY_PROFILE, profileId).apply()
+        _aiApiKey.value = getAiApiKey()
+    }
+
+    fun addAiApiKeyProfile(name: String, apiKey: String): AiApiKeyProfile? {
+        val normalizedName = name.trim()
+        val normalizedKey = apiKey.trim()
+        if (normalizedName.isEmpty() || normalizedKey.isEmpty()) {
+            return null
+        }
+        val profile = AiApiKeyProfile(
+            id = "profile_${java.util.UUID.randomUUID()}",
+            name = normalizedName,
+            apiKey = normalizedKey
+        )
+        persistAiApiKeyProfiles(_aiApiKeyProfiles.value + profile)
+        if (getAiApiKey().isBlank()) {
+            persistActiveAiApiKeyProfileId(profile.id)
+        }
+        return profile
+    }
+
+    fun updateAiApiKeyProfileKey(profileId: String, apiKey: String) {
+        val normalizedKey = apiKey.trim()
+        if (normalizedKey.isEmpty()) return
+        val updated = _aiApiKeyProfiles.value.map { profile ->
+            if (profile.id == profileId) profile.copy(apiKey = normalizedKey) else profile
+        }
+        if (updated != _aiApiKeyProfiles.value) {
+            persistAiApiKeyProfiles(updated)
+        }
+    }
+
+    fun deleteAiApiKeyProfile(profileId: String) {
+        val updated = _aiApiKeyProfiles.value.filterNot { it.id == profileId }
+        if (updated == _aiApiKeyProfiles.value) return
+        persistAiApiKeyProfiles(updated)
+        if (_activeAiApiKeyProfileId.value == profileId) {
+            persistActiveAiApiKeyProfileId(updated.firstOrNull()?.id)
+        }
+    }
+
+    fun activateAiApiKeyProfile(profileId: String) {
+        if (_aiApiKeyProfiles.value.none { it.id == profileId }) return
+        if (_activeAiApiKeyProfileId.value == profileId) return
+        persistActiveAiApiKeyProfileId(profileId)
+    }
+
+    fun getActiveAiApiKeyProfile(): AiApiKeyProfile? =
+        _activeAiApiKeyProfileId.value?.let { activeId ->
+            _aiApiKeyProfiles.value.firstOrNull { it.id == activeId }
+        }
 
     fun toggleFavoriteLanguage(languageCode: String) {
         val current = _favoriteLanguages.value.toMutableSet()
@@ -267,6 +360,11 @@ class UserPreferencesRepository(context: Context) {
     }
 
     fun setAiApiKey(key: String) {
+        val activeProfileId = _activeAiApiKeyProfileId.value
+        if (activeProfileId != null) {
+            updateAiApiKeyProfileKey(activeProfileId, key)
+            return
+        }
         encryptedPrefs.edit().putString(KEY_AI_API_KEY, key).apply()
         _aiApiKey.value = key
     }
@@ -408,7 +506,8 @@ class UserPreferencesRepository(context: Context) {
 
     fun getAiEndpoint(): String = prefs.getString(KEY_AI_ENDPOINT, "") ?: ""
 
-    fun getAiApiKey(): String = encryptedPrefs.getString(KEY_AI_API_KEY, "") ?: ""
+    fun getAiApiKey(): String = getActiveAiApiKeyProfile()?.apiKey
+        ?: encryptedPrefs.getString(KEY_AI_API_KEY, "") ?: ""
 
     fun getAiModel(): String = prefs.getString(KEY_AI_MODEL, DEFAULT_AI_MODEL) ?: DEFAULT_AI_MODEL
 
@@ -529,6 +628,8 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_VIDEO_CARD_SIZE = "video_card_size"
         private const val KEY_AI_ENDPOINT = "ai_endpoint"
         private const val KEY_AI_API_KEY = "ai_api_key"
+        private const val KEY_AI_API_KEY_PROFILES = "ai_api_key_profiles"
+        private const val KEY_ACTIVE_AI_API_KEY_PROFILE = "ai_active_api_key_profile"
         private const val KEY_AI_MODEL = "ai_model"
         private const val KEY_AI_PROMPT = "ai_prompt"
         private const val KEY_VIDEO_COLLECTIONS = "video_collections"

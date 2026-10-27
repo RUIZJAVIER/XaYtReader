@@ -7,6 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.deedeedev.ytreader.R
 import com.deedeedev.ytreader.StringProvider
 import com.deedeedev.ytreader.data.AutoBackupScheduler
+import com.deedeedev.ytreader.data.AiApiKeyProfile
+import com.deedeedev.ytreader.data.AiChatRepository
+import com.deedeedev.ytreader.data.AiChatRequest
 import com.deedeedev.ytreader.data.VideoThumbnailStore
 import com.deedeedev.ytreader.data.YoutubeRepository
 import com.deedeedev.ytreader.data.UserPreferencesRepository
@@ -18,11 +21,18 @@ import com.deedeedev.ytreader.ui.FontOption
 import com.deedeedev.ytreader.ui.home.VideoCardSize
 import com.deedeedev.ytreader.ui.settings.ProgressIndicatorMode
 import com.deedeedev.ytreader.ui.theme.AppTheme
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+data class AiConnectionTestState(
+    val isRunning: Boolean = false,
+    val latencyMs: Long? = null,
+    val errorMessage: String? = null
+)
 
 data class SettingsUiState(
     val defaultFontSize: Float = 16f,
@@ -41,6 +51,12 @@ data class SettingsUiState(
     val aiApiKey: String = "",
     val aiModel: String = "",
     val aiPrompt: String = "",
+    val aiApiKeyProfiles: List<AiApiKeyProfile> = emptyList(),
+    val activeAiApiKeyProfileId: String? = null,
+    val isFetchingModels: Boolean = false,
+    val availableModels: List<String> = emptyList(),
+    val modelsFetchError: String? = null,
+    val connectionTest: AiConnectionTestState = AiConnectionTestState(),
     val isRunningThumbnailBulkAction: Boolean = false,
     val autoBackupEnabled: Boolean = false,
     val autoBackupDirectoryUri: String? = null,
@@ -53,7 +69,8 @@ class SettingsViewModel(
     private val appContext: Context,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val youtubeRepository: YoutubeRepository,
-    private val videoRepository: VideoRepository
+    private val videoRepository: VideoRepository,
+    private val aiChatRepository: AiChatRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -113,6 +130,16 @@ class SettingsViewModel(
         viewModelScope.launch {
             userPreferencesRepository.aiPrompt.collect { prompt ->
                 _uiState.update { it.copy(aiPrompt = prompt) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.aiApiKeyProfiles.collect { profiles ->
+                _uiState.update { it.copy(aiApiKeyProfiles = profiles) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.activeAiApiKeyProfileId.collect { profileId ->
+                _uiState.update { it.copy(activeAiApiKeyProfileId = profileId) }
             }
         }
         viewModelScope.launch {
@@ -179,6 +206,107 @@ class SettingsViewModel(
 
     fun setAiPrompt(prompt: String) {
         userPreferencesRepository.setAiPrompt(prompt)
+    }
+
+    fun addAiApiKeyProfile(name: String, apiKey: String) {
+        userPreferencesRepository.addAiApiKeyProfile(name, apiKey)
+    }
+
+    fun deleteAiApiKeyProfile(profileId: String) {
+        userPreferencesRepository.deleteAiApiKeyProfile(profileId)
+    }
+
+    fun activateAiApiKeyProfile(profileId: String) {
+        userPreferencesRepository.activateAiApiKeyProfile(profileId)
+    }
+
+    fun fetchAiModels() {
+        if (_uiState.value.isFetchingModels) return
+        val endpoint = _uiState.value.aiEndpoint.trim()
+        val apiKey = _uiState.value.aiApiKey.trim()
+        if (endpoint.isBlank() || apiKey.isBlank()) {
+            _uiState.update {
+                it.copy(
+                    modelsFetchError = stringProvider.getString(R.string.ai_cleaning_missing_settings),
+                    availableModels = emptyList()
+                )
+            }
+            return
+        }
+
+        _uiState.update { it.copy(isFetchingModels = true, modelsFetchError = null) }
+        viewModelScope.launch {
+            try {
+                val models = aiChatRepository.listModels(endpoint, apiKey)
+                _uiState.update {
+                    it.copy(isFetchingModels = false, availableModels = models, modelsFetchError = null)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        isFetchingModels = false,
+                        availableModels = emptyList(),
+                        modelsFetchError = error.message
+                            ?.takeIf { message -> message.isNotBlank() }
+                            ?: stringProvider.getString(R.string.ai_chat_failed)
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearModelsFetchError() {
+        _uiState.update { it.copy(modelsFetchError = null) }
+    }
+
+    fun testAiConnection() {
+        if (_uiState.value.connectionTest.isRunning) return
+        val endpoint = _uiState.value.aiEndpoint.trim()
+        val apiKey = _uiState.value.aiApiKey.trim()
+        val model = _uiState.value.aiModel.trim()
+        if (endpoint.isBlank() || apiKey.isBlank() || model.isBlank()) {
+            _uiState.update {
+                it.copy(
+                    connectionTest = AiConnectionTestState(
+                        errorMessage = stringProvider.getString(R.string.ai_cleaning_missing_settings)
+                    )
+                )
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(connectionTest = AiConnectionTestState(isRunning = true))
+        }
+        viewModelScope.launch {
+            try {
+                val latencyMs = aiChatRepository.pingModel(endpoint, apiKey, model)
+                _uiState.update {
+                    it.copy(connectionTest = AiConnectionTestState(latencyMs = latencyMs))
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                val request = AiChatRequest(
+                    endpointBaseUrl = endpoint,
+                    apiKey = apiKey,
+                    model = model,
+                    messages = emptyList()
+                )
+                val failure = aiChatRepository.toFailure(request, error)
+                _uiState.update {
+                    it.copy(
+                        connectionTest = AiConnectionTestState(errorMessage = failure.summary)
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearConnectionTestResult() {
+        _uiState.update { it.copy(connectionTest = AiConnectionTestState()) }
     }
 
     fun setAutoBackupEnabled(enabled: Boolean) {
@@ -339,7 +467,8 @@ class SettingsViewModel(
             appContext: Context,
             userPreferencesRepository: UserPreferencesRepository,
             youtubeRepository: YoutubeRepository,
-            videoRepository: VideoRepository
+            videoRepository: VideoRepository,
+            aiChatRepository: AiChatRepository
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -348,7 +477,8 @@ class SettingsViewModel(
                     appContext,
                     userPreferencesRepository,
                     youtubeRepository,
-                    videoRepository
+                    videoRepository,
+                    aiChatRepository
                 ) as T
             }
         }

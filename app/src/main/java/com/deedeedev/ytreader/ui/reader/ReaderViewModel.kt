@@ -9,6 +9,8 @@ import com.deedeedev.ytreader.StringProvider
 import com.deedeedev.ytreader.data.AiChatMessage
 import com.deedeedev.ytreader.data.AiChatRepository
 import com.deedeedev.ytreader.data.AiChatRequest
+import com.deedeedev.ytreader.data.AiCleaningRepository
+import com.deedeedev.ytreader.data.AiCleaningRequest
 import com.deedeedev.ytreader.data.AiCleaningWorkScheduler
 import com.deedeedev.ytreader.widget.ReaderWidgetProvider
 import com.deedeedev.ytreader.data.NoteRepository
@@ -22,6 +24,7 @@ import com.deedeedev.ytreader.domain.SubtitleParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,6 +83,7 @@ class ReaderViewModel(
     private val noteRepository: NoteRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val aiChatRepository: AiChatRepository,
+    private val aiCleaningRepository: AiCleaningRepository,
     private val subtitleId: Long,
     private val widgetUpdater: (Context) -> Unit = { context -> ReaderWidgetProvider.notifyWidgetChanged(context) }
 ) : ViewModel() {
@@ -92,6 +96,7 @@ class ReaderViewModel(
 
     private var nextAiChatMessageId = 0L
     private var aiChatJob: Job? = null
+    private var aiCleaningJob: Job? = null
 
     init {
         markSubtitleOpened()
@@ -483,6 +488,12 @@ class ReaderViewModel(
     }
 
     suspend fun enqueueAiCleaning(inputText: String): Result<Unit> {
+        val sourceText = inputText.trim()
+        if (sourceText.isEmpty()) {
+            return Result.failure(
+                IllegalStateException(stringProvider.getString(R.string.ai_cleaning_no_text_available))
+            )
+        }
         val endpoint = userPreferencesRepository.getAiEndpoint().trim()
         val key = userPreferencesRepository.getAiApiKey().trim()
         val model = userPreferencesRepository.getAiModel().trim()
@@ -497,19 +508,78 @@ class ReaderViewModel(
             )
         }
 
-        return try {
-            subtitleRepository.markAiCleaningQueued(subtitleId, inputText, System.currentTimeMillis())
-            AiCleaningWorkScheduler.enqueue(appContext, subtitleId)
-            Result.success(Unit)
-        } catch (error: Exception) {
-            subtitleRepository.storeAiCleaningFailure(
+        val request = AiCleaningRequest(
+            endpointBaseUrl = endpoint,
+            apiKey = key,
+            model = model,
+            userInstructions = userPreferencesRepository.getAiPrompt(),
+            subtitleText = sourceText
+        )
+
+        aiCleaningJob = viewModelScope.launch {
+            executeAiCleaning(request)
+        }
+        return Result.success(Unit)
+    }
+
+    private suspend fun executeAiCleaning(request: AiCleaningRequest) {
+        _uiState.update {
+            it.copy(
+                isAiCleaning = true,
+                pendingAiCleanedText = null,
+                aiCleaningErrorSummary = null,
+                aiCleaningErrorLog = null
+            )
+        }
+        try {
+            subtitleRepository.markAiCleaningQueued(
                 subtitleId = subtitleId,
-                summary = error.message?.takeIf { it.isNotBlank() }
-                    ?: stringProvider.getString(R.string.ai_cleaning_start_failed),
-                log = error.stackTraceToString(),
+                inputText = request.subtitleText,
                 updatedAt = System.currentTimeMillis()
             )
-            Result.failure(error)
+            val cleanedText = aiCleaningRepository.cleanText(request)
+            subtitleRepository.storeAiCleaningResult(
+                subtitleId = subtitleId,
+                result = cleanedText,
+                updatedAt = System.currentTimeMillis()
+            )
+            _uiState.update {
+                it.copy(
+                    isAiCleaning = false,
+                    pendingAiCleanedText = cleanedText,
+                    aiCleaningErrorSummary = null,
+                    aiCleaningErrorLog = null
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            // The reader scope was cancelled (e.g. the user left the reader).
+            // Hand the job over to WorkManager so the cleaning can finish in background.
+            withContext(NonCancellable) {
+                subtitleRepository.markAiCleaningQueued(
+                    subtitleId = subtitleId,
+                    inputText = request.subtitleText,
+                    updatedAt = System.currentTimeMillis()
+                )
+                AiCleaningWorkScheduler.enqueue(appContext, subtitleId)
+            }
+            _uiState.update { it.copy(isAiCleaning = false) }
+            throw cancelled
+        } catch (throwable: Throwable) {
+            val failure = aiCleaningRepository.toFailure(request, throwable)
+            subtitleRepository.storeAiCleaningFailure(
+                subtitleId = subtitleId,
+                summary = failure.summary,
+                log = failure.detailedLog,
+                updatedAt = System.currentTimeMillis()
+            )
+            _uiState.update {
+                it.copy(
+                    isAiCleaning = false,
+                    pendingAiCleanedText = null,
+                    aiCleaningErrorSummary = failure.summary,
+                    aiCleaningErrorLog = failure.detailedLog
+                )
+            }
         }
     }
 
@@ -683,6 +753,7 @@ class ReaderViewModel(
             noteRepository: NoteRepository,
             userPreferencesRepository: UserPreferencesRepository,
             aiChatRepository: AiChatRepository,
+            aiCleaningRepository: AiCleaningRepository,
             subtitleId: Long
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -694,6 +765,7 @@ class ReaderViewModel(
                     noteRepository,
                     userPreferencesRepository,
                     aiChatRepository,
+                    aiCleaningRepository,
                     subtitleId
                 ) as T
             }

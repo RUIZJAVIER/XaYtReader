@@ -200,7 +200,7 @@ internal fun ReaderQuickActions(
     ) {
         Surface(
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
             tonalElevation = 2.dp,
             shadowElevation = 3.dp,
             modifier = Modifier.testTag(READER_QUICK_ACTIONS_TAG)
@@ -260,7 +260,6 @@ internal fun ReaderBottomBar(
     fontSize: Float,
     selectedFontFamily: String,
     isAiCleaning: Boolean,
-    isNotificationPermissionGranted: Boolean,
     currentText: String,
     onCopyText: (AnnotatedString) -> Unit,
     onToggleTimestamps: () -> Unit,
@@ -276,7 +275,6 @@ internal fun ReaderBottomBar(
     onShowFindAndReplace: () -> Unit,
     onStartExternalAiCleaning: (String) -> Unit,
     onStartAiCleaning: (String) -> Unit,
-    onRequestNotificationPermission: (String) -> Unit,
     hasTimestampedSegments: Boolean,
     onShowJumpToTime: () -> Unit,
     useWebView: Boolean = false,
@@ -483,11 +481,7 @@ if (!isOriginalMode) {
                                         onClick = {
                                             showCleaningSubmenu = false
                                             showOverflowMenu = false
-                                            if (isNotificationPermissionGranted) {
-                                                onStartAiCleaning(currentText)
-                                            } else {
-                                                onRequestNotificationPermission(currentText)
-                                            }
+                                            onStartAiCleaning(currentText)
                                         },
                                         enabled = !isAiCleaning
                                     )

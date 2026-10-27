@@ -31,7 +31,8 @@ fun SettingsBackupScreen(
             appContainer.appContext,
             appContainer.userPreferencesRepository,
             appContainer.youtubeRepository,
-            appContainer.videoRepository
+            appContainer.videoRepository,
+            appContainer.aiChatRepository
         )
     )
 ) {

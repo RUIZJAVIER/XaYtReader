@@ -94,6 +94,7 @@ internal fun WebViewOriginalContentPane(
             ),
         bridge = bridge,
         initialBackgroundColor = readerBackgroundColor,
+        backgroundColor = readerBackgroundColor,
         statusBarHeightPx = statusBarHeightPx,
         navBarHeightPx = navBarHeightPx,
         onViewCreated = { wv ->

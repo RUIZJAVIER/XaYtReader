@@ -1,26 +1,21 @@
 package com.deedeedev.ytreader.ui.reader
 
-import android.Manifest
 import android.util.Log
 import kotlin.math.roundToInt
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -36,7 +31,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -63,7 +57,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
-import androidx.core.app.ActivityCompat
 import android.webkit.WebView
 import com.deedeedev.ytreader.ui.reader.webview.WebViewReaderJs
 
@@ -121,6 +114,7 @@ internal fun ReaderScreen(
             noteRepository,
             userPreferencesRepository,
             appContainer.aiChatRepository,
+            appContainer.aiCleaningRepository,
             subtitleId
         )
     )
@@ -201,7 +195,6 @@ internal fun ReaderScreen(
     var showAiChatSheet by remember { mutableStateOf(false) }
     var aiChatSelectedFragment by remember { mutableStateOf<String?>(null) }
     var showLocalCleaningDialog by remember { mutableStateOf(false) }
-    var pendingAiCleaningSourceText by remember { mutableStateOf<String?>(null) }
     var selectionRange by remember { mutableStateOf<SelectionRange?>(null) }
     var activeHighlight by remember { mutableStateOf<TextHighlight?>(null) }
     var showHighlightNoteDialog by remember { mutableStateOf(false) }
@@ -831,40 +824,6 @@ internal fun ReaderScreen(
         )
     }
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        val sourceText = pendingAiCleaningSourceText
-        pendingAiCleaningSourceText = null
-        if (sourceText.isNullOrBlank()) {
-            return@rememberLauncherForActivityResult
-        }
-
-        coroutineScope.launch {
-            if (!granted) {
-                val shouldShowSettingsHint = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    activity != null &&
-                    !ActivityCompat.shouldShowRequestPermissionRationale(
-                        activity,
-                        Manifest.permission.POST_NOTIFICATIONS
-                    )
-                val messageRes = if (shouldShowSettingsHint) {
-                    R.string.notification_permission_denied_settings_hint
-                } else {
-                    R.string.notification_permission_denied_hint
-                }
-                val result = snackbarHostState.showSnackbar(
-                    message = context.getString(messageRes),
-                    actionLabel = context.getString(R.string.open_settings)
-                )
-                if (result == SnackbarResult.ActionPerformed) {
-                    openAppNotificationSettings(context)
-                }
-            }
-            startAiCleaningJob(sourceText)
-        }
-    }
-
     fun requestAction(action: PendingAction) {
         when (action) {
             is PendingAction.ShowWebViewEditUnavailable -> {
@@ -1434,7 +1393,6 @@ internal fun ReaderScreen(
         onDecreaseFontSize = { viewModel.updateFontSize(fontSize - 2f) },
         onIncreaseFontSize = { viewModel.updateFontSize(fontSize + 2f) },
         onChangeFontFamily = { viewModel.updateFontFamily(it) },
-        isNotificationPermissionGranted = hasNotificationPermission(context),
         currentText = currentText(),
         onCopyText = { clipboardManager.setText(it) },
         onCopyAllText = { copyFullSubtitle() },
@@ -1518,16 +1476,6 @@ internal fun ReaderScreen(
                 }
             } else {
                 coroutineScope.launch { startAiCleaningJob(sourceText) }
-            }
-        },
-        onRequestNotificationPermission = { sourceText ->
-            if (sourceText.isBlank()) {
-                coroutineScope.launch {
-                    snackbarHostState.showSnackbar(context.getString(R.string.nothing_to_clean))
-                }
-            } else {
-                pendingAiCleaningSourceText = sourceText
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         },
         hasTimestampedSegments = originalSegments.isNotEmpty(),

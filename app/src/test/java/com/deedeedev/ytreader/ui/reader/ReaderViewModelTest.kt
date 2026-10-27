@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.deedeedev.ytreader.StringProvider
 import com.deedeedev.ytreader.data.AiChatRepository
+import com.deedeedev.ytreader.data.AiCleaningFailure
+import com.deedeedev.ytreader.data.AiCleaningRepository
 import com.deedeedev.ytreader.data.NoteRepository
 import com.deedeedev.ytreader.data.SubtitleRepository
 import com.deedeedev.ytreader.data.UserPreferencesRepository
@@ -35,6 +37,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.argThat
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
@@ -51,6 +54,7 @@ class ReaderViewModelTest {
 
     private lateinit var subtitleRepository: SubtitleRepository
     private lateinit var noteRepository: NoteRepository
+    private lateinit var aiCleaningRepository: AiCleaningRepository
     private lateinit var subtitleWithStatesFlow: MutableStateFlow<SubtitleWithStates?>
     private lateinit var noteFlow: MutableStateFlow<List<HighlightNoteEntity>>
     private lateinit var bookmarkFlow: MutableStateFlow<List<BookmarkEntity>>
@@ -61,6 +65,7 @@ class ReaderViewModelTest {
         stringProvider = mock()
         subtitleRepository = mock()
         noteRepository = mock()
+        aiCleaningRepository = mock()
         subtitleWithStatesFlow = MutableStateFlow(
             SubtitleWithStates(
                 subtitle = baseSubtitleEntity(highlights = emptyList()),
@@ -282,20 +287,114 @@ class ReaderViewModelTest {
         )
     }
 
-    private fun createViewModel(): ReaderViewModel {
+    @Test
+    fun enqueueAiCleaning_runsDirectlyAndExposesPendingResult() = runTest {
+        val preferences = createUserPreferencesRepository(
+            endpoint = "https://api.test.com/v1",
+            apiKey = "test-key",
+            model = "gpt-test"
+        )
+        whenever(aiCleaningRepository.cleanText(any())).thenReturn("Cleaned text")
+        val viewModel = createViewModel(preferences)
+        advanceUntilIdle()
+
+        val result = viewModel.enqueueAiCleaning("Original text")
+        advanceUntilIdle()
+
+        assertEquals(true, result.isSuccess)
+        assertEquals("Cleaned text", viewModel.uiState.value.pendingAiCleanedText)
+        assertEquals(false, viewModel.uiState.value.isAiCleaning)
+        assertEquals(null, viewModel.uiState.value.aiCleaningErrorSummary)
+        verify(subtitleRepository).markAiCleaningQueued(eq(SUBTITLE_ID), eq("Original text"), any())
+        verify(subtitleRepository).storeAiCleaningResult(eq(SUBTITLE_ID), eq("Cleaned text"), any())
+    }
+
+    @Test
+    fun enqueueAiCleaning_marksUiStateAsCleaningWhileRunning() = runTest {
+        val preferences = createUserPreferencesRepository(
+            endpoint = "https://api.test.com/v1",
+            apiKey = "test-key",
+            model = "gpt-test"
+        )
+        var wasCleaning = false
+        whenever(aiCleaningRepository.cleanText(any())).thenAnswer {
+            wasCleaning = true
+            "Cleaned text"
+        }
+        val viewModel = createViewModel(preferences)
+        advanceUntilIdle()
+
+        viewModel.enqueueAiCleaning("Original text")
+        advanceUntilIdle()
+
+        assertEquals(true, wasCleaning)
+        assertEquals(false, viewModel.uiState.value.isAiCleaning)
+    }
+
+    @Test
+    fun enqueueAiCleaning_storesFailureAndExposesError() = runTest {
+        val preferences = createUserPreferencesRepository(
+            endpoint = "https://api.test.com/v1",
+            apiKey = "test-key",
+            model = "gpt-test"
+        )
+        whenever(aiCleaningRepository.cleanText(any())).thenThrow(RuntimeException("boom"))
+        whenever(aiCleaningRepository.toFailure(any(), any())).thenReturn(
+            AiCleaningFailure(summary = "Request failed", detailedLog = "error details")
+        )
+        val viewModel = createViewModel(preferences)
+        advanceUntilIdle()
+
+        val result = viewModel.enqueueAiCleaning("Original text")
+        advanceUntilIdle()
+
+        assertEquals(true, result.isSuccess)
+        assertEquals("Request failed", viewModel.uiState.value.aiCleaningErrorSummary)
+        assertEquals("error details", viewModel.uiState.value.aiCleaningErrorLog)
+        assertEquals(false, viewModel.uiState.value.isAiCleaning)
+        assertEquals(null, viewModel.uiState.value.pendingAiCleanedText)
+        verify(subtitleRepository).storeAiCleaningFailure(
+            eq(SUBTITLE_ID),
+            eq("Request failed"),
+            eq("error details"),
+            any()
+        )
+    }
+
+    @Test
+    fun enqueueAiCleaning_failsFastWhenSettingsAreMissing() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val result = viewModel.enqueueAiCleaning("Original text")
+        advanceUntilIdle()
+
+        assertEquals(true, result.isFailure)
+        assertEquals("Missing settings", result.exceptionOrNull()?.message)
+        verify(subtitleRepository, never()).markAiCleaningQueued(any(), any(), any())
+    }
+
+    private fun createViewModel(
+        userPreferencesRepository: UserPreferencesRepository = createUserPreferencesRepository()
+    ): ReaderViewModel {
         return ReaderViewModel(
             stringProvider = stringProvider,
             appContext = mock(),
             subtitleRepository = subtitleRepository,
             noteRepository = noteRepository,
-            userPreferencesRepository = createUserPreferencesRepository(),
+            userPreferencesRepository = userPreferencesRepository,
             aiChatRepository = mock(),
+            aiCleaningRepository = aiCleaningRepository,
             subtitleId = SUBTITLE_ID,
             widgetUpdater = { _ -> }
         )
     }
 
-    private fun createUserPreferencesRepository(): UserPreferencesRepository {
+    private fun createUserPreferencesRepository(
+        endpoint: String = "",
+        apiKey: String = "",
+        model: String = ""
+    ): UserPreferencesRepository {
         val context = mock<Context>()
         val preferences = mock<SharedPreferences>()
         val editor = mock<SharedPreferences.Editor>()
@@ -303,7 +402,15 @@ class ReaderViewModelTest {
         whenever(context.getSharedPreferences(any(), eq(Context.MODE_PRIVATE))).thenReturn(preferences)
         whenever(preferences.getStringSet(any(), any())).thenReturn(emptySet())
         whenever(preferences.getFloat(any(), any())).thenAnswer { it.arguments[1] as Float }
-        whenever(preferences.getString(any(), any())).thenAnswer { it.arguments[1] as String? }
+        whenever(preferences.getString(any(), any())).thenAnswer { invocation ->
+            val key = invocation.arguments[0] as String
+            when (key) {
+                "ai_endpoint" -> endpoint
+                "ai_api_key" -> apiKey
+                "ai_model" -> model
+                else -> invocation.arguments[1] as String?
+            }
+        }
         whenever(preferences.edit()).thenReturn(editor)
         whenever(editor.putString(any(), any())).thenReturn(editor)
         whenever(editor.putStringSet(any(), any())).thenReturn(editor)

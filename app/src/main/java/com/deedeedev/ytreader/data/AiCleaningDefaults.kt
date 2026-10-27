@@ -13,6 +13,7 @@ Goals:
 Constraints:
 - Preserve original meaning, sentence order, and tone.
 - Stay as close as possible to the original wording.
-- Do not summarize, rewrite, translate, censor, or add new information.
+- Keep the subtitle's original language. Do not translate.
+- Do not summarize, rewrite, censor, or add new information.
 - Return only the cleaned text.
 """.trimIndent()

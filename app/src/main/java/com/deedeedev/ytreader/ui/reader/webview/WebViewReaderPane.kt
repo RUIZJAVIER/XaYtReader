@@ -22,6 +22,7 @@ internal fun WebViewReaderPane(
     modifier: Modifier = Modifier,
     bridge: WebViewReaderBridge,
     initialBackgroundColor: Int,
+    backgroundColor: Int = initialBackgroundColor,
     statusBarHeightPx: Int,
     navBarHeightPx: Int,
     onViewCreated: (WebView) -> Unit,
@@ -68,6 +69,9 @@ internal fun WebViewReaderPane(
             }
         },
         update = { webView ->
+            // Keep the native surface in sync with the theme so the WebView
+            // never flashes its default color when coming back from background.
+            webView.setBackgroundColor(backgroundColor)
         },
         onRelease = {
             rememberedOnDestroyed()

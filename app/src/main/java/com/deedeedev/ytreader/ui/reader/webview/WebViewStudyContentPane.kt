@@ -153,6 +153,7 @@ internal fun WebViewStudyContentPane(
             ),
         bridge = bridge,
         initialBackgroundColor = readerBackgroundColor,
+        backgroundColor = readerBackgroundColor,
         statusBarHeightPx = statusBarHeightPx,
         navBarHeightPx = navBarHeightPx,
         onViewCreated = { wv ->
@@ -167,16 +168,8 @@ internal fun WebViewStudyContentPane(
         }
     )
 
-    LaunchedEffect(isWebViewReady, readOnlyContent) {
-        val wv = webView ?: return@LaunchedEffect
-        if (!isWebViewReady) return@LaunchedEffect
-        if (readOnlyContent == lastContent) return@LaunchedEffect
-        lastContent = readOnlyContent
-        with(WebViewReaderJs) {
-            wv.setContent(readOnlyContent)
-        }
-    }
-
+    // Apply styles BEFORE the first content render so the freshly created
+    // WebView never paints content with the default (dark) palette.
     LaunchedEffect(isWebViewReady, fontSize, lineHeightMultiplier, fontFamilyName, readerTextColor, readerBackgroundColor) {
         val wv = webView ?: return@LaunchedEffect
         if (!isWebViewReady) return@LaunchedEffect
@@ -184,6 +177,16 @@ internal fun WebViewStudyContentPane(
         val bgColorHex = if (readerBackgroundColor == 0 || readerBackgroundColor == -1) "#ffffff" else String.format("#%06X", 0xFFFFFF and readerBackgroundColor)
         with(WebViewReaderJs) {
             wv.setStyles(fontSize, lineHeightMultiplier, fontFamilyName, textColorHex, bgColorHex)
+        }
+    }
+
+    LaunchedEffect(isWebViewReady, readOnlyContent) {
+        val wv = webView ?: return@LaunchedEffect
+        if (!isWebViewReady) return@LaunchedEffect
+        if (readOnlyContent == lastContent) return@LaunchedEffect
+        lastContent = readOnlyContent
+        with(WebViewReaderJs) {
+            wv.setContent(readOnlyContent)
         }
     }
 

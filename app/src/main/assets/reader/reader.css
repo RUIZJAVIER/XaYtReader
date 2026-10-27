@@ -3,7 +3,10 @@
   --line-height: 1.5;
   --font-family: sans-serif;
   --text-color: #e0e0e0;
-  --bg-color: #000000;
+  /* Transparent by default: the native WebView surface provides the theme
+     background color, so the first frames never flash black before
+     setStyles() runs. */
+  --bg-color: transparent;
   --highlight-red: rgba(229, 115, 115, 0.4);
   --highlight-blue: rgba(66, 165, 245, 0.4);
   --highlight-green: rgba(102, 187, 106, 0.4);
@@ -38,7 +41,9 @@ body {
   position: relative;
   padding: 0 4px;
   padding-top: var(--notch-height);
-  padding-bottom: var(--nav-height);
+  /* Extra bottom room so the last subtitle lines can always scroll clear of
+     the floating quick actions (~48dp tall, ~48dp from the bottom edge). */
+  padding-bottom: calc(var(--nav-height) + 96px);
   text-align: justify;
   word-wrap: break-word;
   overflow-wrap: break-word;

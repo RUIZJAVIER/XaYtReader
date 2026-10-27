@@ -177,6 +177,72 @@ class UserPreferencesRepositoryTest {
         )
     }
 
+    @Test
+    fun aiApiKeyProfiles_switchActiveKeyAndFallBackToLegacyKey() {
+        val repository = createRepository()
+        repository.setAiApiKey("legacy-key")
+        assertEquals("legacy-key", repository.getAiApiKey())
+
+        val profile = repository.addAiApiKeyProfile("tokendeeseep 4.1", "key-one")
+        assertTrue(profile != null)
+        // Adding a profile does not steal activation from the legacy key.
+        assertEquals("legacy-key", repository.getAiApiKey())
+
+        repository.activateAiApiKeyProfile(profile!!.id)
+        assertEquals("key-one", repository.getAiApiKey())
+        assertEquals(profile.id, repository.activeAiApiKeyProfileId.value)
+
+        repository.deleteAiApiKeyProfile(profile.id)
+        // Deleting the active profile falls back to the legacy key.
+        assertEquals("legacy-key", repository.getAiApiKey())
+        assertEquals(null, repository.activeAiApiKeyProfileId.value)
+    }
+
+    @Test
+    fun aiApiKeyProfiles_firstProfileBecomesActiveWhenNoKeyExists() {
+        val repository = createRepository()
+
+        val profile = repository.addAiApiKeyProfile("personal", "key-one")
+
+        assertTrue(profile != null)
+        assertEquals("key-one", repository.getAiApiKey())
+        assertEquals(profile!!.id, repository.activeAiApiKeyProfileId.value)
+    }
+
+    @Test
+    fun aiApiKeyProfiles_persistAcrossRepositoryInstances() {
+        val sharedPreferences = FakeSharedPreferences()
+        val repository = createRepository(sharedPreferences)
+        val profile = repository.addAiApiKeyProfile("work", "key-work")!!
+        repository.activateAiApiKeyProfile(profile.id)
+        val secondProfile = repository.addAiApiKeyProfile("personal", "key-personal")!!
+
+        val restoredRepository = createRepository(sharedPreferences)
+
+        assertEquals(
+            listOf(profile, secondProfile),
+            restoredRepository.aiApiKeyProfiles.value
+        )
+        assertEquals(profile.id, restoredRepository.activeAiApiKeyProfileId.value)
+        assertEquals("key-work", restoredRepository.getAiApiKey())
+    }
+
+    @Test
+    fun setAiApiKey_updatesActiveProfileInsteadOfLegacyKey() {
+        val repository = createRepository()
+        repository.setAiApiKey("legacy-key")
+        val profile = repository.addAiApiKeyProfile("tokendeeseep 4.1", "key-one")!!
+        repository.activateAiApiKeyProfile(profile.id)
+
+        repository.setAiApiKey("key-updated")
+
+        assertEquals("key-updated", repository.getAiApiKey())
+        assertEquals("key-updated", repository.aiApiKeyProfiles.value.first().apiKey)
+        repository.deleteAiApiKeyProfile(profile.id)
+        // The legacy key was never modified by setAiApiKey while a profile was active.
+        assertEquals("legacy-key", repository.getAiApiKey())
+    }
+
     private fun createRepository(sharedPreferences: SharedPreferences = FakeSharedPreferences()): UserPreferencesRepository {
         val context = mock<Context>()
 

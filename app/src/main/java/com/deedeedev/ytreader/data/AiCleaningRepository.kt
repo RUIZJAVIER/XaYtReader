@@ -132,6 +132,7 @@ class AiCleaningRepository(
 
         Clean the subtitle text below.
         Return only cleaned text with no markdown, no code fences, no explanations.
+        The cleaned text must stay in the original language of the subtitle. Never translate it.
 
         <<SUBTITLE_TEXT>>
         $subtitleText
@@ -242,7 +243,8 @@ class AiCleaningRepository(
             Hard constraints:
             - Keep original meaning and sentence order.
             - Stay as close as possible to original words.
-            - Do not summarize, rewrite style, translate, or add content.
+            - Keep the subtitle's original language. Never translate.
+            - Do not summarize, rewrite style, or add content.
             - Output plain cleaned text only.
         """
     }

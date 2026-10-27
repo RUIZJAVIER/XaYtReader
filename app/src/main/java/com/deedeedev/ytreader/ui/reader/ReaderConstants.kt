@@ -18,6 +18,7 @@ internal const val READER_BRIGHTNESS_GESTURE_TAG = "reader_brightness_gesture"
 internal const val READER_BRIGHTNESS_INDICATOR_TAG = "reader_brightness_indicator"
 internal const val READER_PAGE_PROGRESS_TAG = "reader_page_progress"
 internal const val READER_QUICK_ACTIONS_TAG = "reader_quick_actions"
+internal const val READER_AI_CLEANING_BANNER_TAG = "reader_ai_cleaning_banner"
 
 internal val READER_BOTTOM_BAR_HEIGHT = 64.dp
 internal val READER_SEARCH_RESULTS_BAR_HEIGHT = 64.dp
