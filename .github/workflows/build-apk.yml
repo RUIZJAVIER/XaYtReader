@@ -50,11 +50,8 @@ jobs:
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             echo "Gradle failed with exit code $status"
-            tail -n 60 gradle-build.log | while IFS= read -r line; do
-              line="${line//'%'/'%25'}"
-              line="${line//$'\r'/}"
-              echo "::error::$line"
-            done
+            log=$(sed -e 's/%/%25/g' -e 's/\r$//' -e 's/$/%0A/' gradle-build.log | tr -d '\n')
+            echo "::error title=Gradle build log::$log"
           fi
           exit "$status"
 
